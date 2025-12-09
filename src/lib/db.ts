@@ -151,6 +151,44 @@ export async function getPoolClient(timeoutMs: number = CONNECTION_TIMEOUT_MS): 
   }
 }
 
+/**
+ * Execute a query with timeout protection
+ * This ensures queries don't hang indefinitely
+ * 
+ * @param queryText - SQL query string
+ * @param params - Query parameters
+ * @param timeoutMs - Query timeout in milliseconds (default: 5000ms)
+ * @returns Query result
+ */
+export async function queryWithTimeout(
+  queryText: string,
+  params: any[] = [],
+  timeoutMs: number = QUERY_TIMEOUT_MS
+): Promise<any> {
+  const startTime = Date.now();
+  
+  try {
+    // Wrap the query in a Promise.race to enforce timeout
+    const queryPromise = pool.query(queryText, params);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Query timeout after ${timeoutMs}ms`)), timeoutMs)
+    );
+
+    const result = await Promise.race([queryPromise, timeoutPromise]);
+    
+    const queryTime = Date.now() - startTime;
+    if (queryTime > 2000) {
+      console.warn(`[DB] Slow query (${queryTime}ms): ${queryText.substring(0, 100)}...`);
+    }
+    
+    return result;
+  } catch (error: any) {
+    const queryTime = Date.now() - startTime;
+    console.error(`[DB] Query failed after ${queryTime}ms:`, error.message);
+    throw error;
+  }
+}
+
 // Export the pool so other modules can use it to run queries
 export default pool;
 

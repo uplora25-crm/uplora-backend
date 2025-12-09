@@ -82,44 +82,55 @@ function getHandler() {
 // Main handler function - Vercel will call this for all requests routed to /api/*
 export default async function handler(req: any, res: any) {
   const requestStartTime = Date.now();
+  const requestId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  console.log(`[API:${requestId}] ${req.method} ${req.url || req.path || 'unknown'}`);
 
   try {
     // Get or create the serverless handler (lazy initialization)
     const handler = getHandler();
 
-    // Wrap handler execution in a promise for timeout protection
-    await new Promise<void>((resolve, reject) => {
-      // Set a timeout to prevent hanging requests
-      const timeout = setTimeout(() => {
-        if (!res.headersSent) {
-          console.error('[API] Request timeout after 25s');
-          res.status(504).json({
-            success: false,
-            error: 'Gateway Timeout',
-            message: 'Request took too long to process',
-          });
-        }
-        reject(new Error('Request timeout'));
-      }, 25000); // 25s timeout (less than Vercel's 30s function timeout)
+    // Set a global timeout for the entire request (20s to leave buffer for Vercel)
+    const requestTimeout = setTimeout(() => {
+      if (!res.headersSent) {
+        const elapsed = Date.now() - requestStartTime;
+        console.error(`[API:${requestId}] Request timeout after ${elapsed}ms`);
+        res.status(504).json({
+          success: false,
+          error: 'Gateway Timeout',
+          message: 'Request took too long to process',
+        });
+      }
+    }, 20000); // 20s timeout (less than Vercel's 30s function timeout)
 
-      // Execute the handler
+    // Execute the handler - serverless-http handles the callback
+    return new Promise<void>((resolve, reject) => {
       handler(req, res, (err: any) => {
-        clearTimeout(timeout);
+        clearTimeout(requestTimeout);
+        
+        const totalTime = Date.now() - requestStartTime;
+        
         if (err) {
+          console.error(`[API:${requestId}] Error after ${totalTime}ms:`, err.message);
+          if (!res.headersSent) {
+            res.status(500).json({
+              success: false,
+              error: 'Internal server error',
+              message: process.env.NODE_ENV === 'development' ? err.message : 'An error occurred',
+            });
+          }
           reject(err);
         } else {
+          if (totalTime > 3000) {
+            console.log(`[API:${requestId}] Completed in ${totalTime}ms (slow)`);
+          }
           resolve();
         }
       });
     });
-
-    const totalTime = Date.now() - requestStartTime;
-    if (totalTime > 5000) {
-      console.log(`[API] Request completed in ${totalTime}ms`);
-    }
   } catch (error: any) {
     const totalTime = Date.now() - requestStartTime;
-    console.error(`[API] Request failed after ${totalTime}ms:`, error.message);
+    console.error(`[API:${requestId}] Failed after ${totalTime}ms:`, error.message);
 
     // If response hasn't been sent, send error response
     if (!res.headersSent) {
@@ -129,6 +140,8 @@ export default async function handler(req: any, res: any) {
         message: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred',
       });
     }
+    
+    throw error;
   }
 }
 

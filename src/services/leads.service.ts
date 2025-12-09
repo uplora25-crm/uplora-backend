@@ -8,7 +8,7 @@
  * making the code easier to test and maintain.
  */
 
-import pool, { getPoolClient } from '../lib/db';
+import pool, { getPoolClient, queryWithTimeout } from '../lib/db';
 import { PoolClient } from 'pg';
 import type { LeadDetail, Activity, ColdCall, OnsiteVisit, LeadTimeline } from '../types/leads';
 
@@ -185,12 +185,10 @@ export async function createLead(leadData: CreateLeadInput): Promise<LeadWithCon
  * @returns An array of all leads with their contacts
  */
 export async function getAllLeads(): Promise<LeadWithContact[]> {
-  // SQL query to get all leads and join with their contacts
-  // LEFT JOIN means we'll get leads even if they don't have a contact (though they should)
-  try {
-    // Start with the simplest query - just leads without any joins
-    // Then try to add joins incrementally
-    let query = `
+  // Optimized single query with all joins - reduces query time significantly
+  // LEFT JOINs ensure we get leads even if contacts/users don't exist
+  // Query timeout protection (5s) prevents hanging
+  const query = `
     SELECT 
       l.id,
       l.name,
@@ -204,103 +202,28 @@ export async function getAllLeads(): Promise<LeadWithContact[]> {
       l.notes,
       l.created_at,
       l.updated_at,
-      l.created_by_email
+      l.created_by_email,
+      c.id as contact_table_id,
+      c.name as contact_name,
+      c.email as contact_email,
+      c.phone as contact_phone,
+      c.company as contact_company,
+      c.created_at as contact_created_at,
+      c.updated_at as contact_updated_at,
+      u.name as creator_name
     FROM leads l
+    LEFT JOIN contacts c ON l.contact_id = c.id
+    LEFT JOIN users u ON l.created_by_email = u.email
     ORDER BY l.created_at DESC
-    `;
-    
-    let result;
-    let hasContactsJoin = false;
-    let hasUsersJoin = false;
-    
-    // Try the basic query first
-    try {
-      result = await pool.query(query);
-      console.log('✅ Basic leads query successful');
-    } catch (basicError: any) {
-      console.error('❌ Basic leads query failed:', {
-        message: basicError.message,
-        code: basicError.code,
-        detail: basicError.detail,
-      });
-      throw basicError;
-    }
-    
-    // Try to add contacts join
-    try {
-      query = `
-      SELECT 
-        l.id,
-        l.name,
-        l.email,
-        l.phone,
-        l.contact_id,
-        l.source,
-        l.stage,
-        l.status,
-        l.verticals,
-        l.notes,
-        l.created_at,
-        l.updated_at,
-        l.created_by_email,
-        c.id as contact_table_id,
-        c.name as contact_name,
-        c.email as contact_email,
-        c.phone as contact_phone,
-        c.company as contact_company,
-        c.created_at as contact_created_at,
-        c.updated_at as contact_updated_at
-      FROM leads l
-      LEFT JOIN contacts c ON l.contact_id = c.id
-      ORDER BY l.created_at DESC
-      `;
-      result = await pool.query(query);
-      hasContactsJoin = true;
-      console.log('✅ Leads query with contacts join successful');
-    } catch (contactsError: any) {
-      console.warn('⚠️ Contacts join failed, using basic query:', contactsError.message);
-      // Continue with basic query result
-    }
-    
-    // Try to add users join if contacts join worked
-    if (hasContactsJoin) {
-      try {
-        query = `
-        SELECT 
-          l.id,
-          l.name,
-          l.email,
-          l.phone,
-          l.contact_id,
-          l.source,
-          l.stage,
-          l.status,
-          l.verticals,
-          l.notes,
-          l.created_at,
-          l.updated_at,
-          l.created_by_email,
-          c.id as contact_table_id,
-          c.name as contact_name,
-          c.email as contact_email,
-          c.phone as contact_phone,
-          c.company as contact_company,
-          c.created_at as contact_created_at,
-          c.updated_at as contact_updated_at,
-          u.name as creator_name
-        FROM leads l
-        LEFT JOIN contacts c ON l.contact_id = c.id
-        LEFT JOIN users u ON l.created_by_email = u.email
-        ORDER BY l.created_at DESC
-        `;
-        result = await pool.query(query);
-        hasUsersJoin = true;
-        console.log('✅ Leads query with users join successful');
-      } catch (usersError: any) {
-        console.warn('⚠️ Users join failed, continuing without creator_name:', usersError.message);
-        // Continue with contacts join result
-      }
-    }
+    LIMIT 1000
+  `;
+  
+  try {
+    // Use timeout-protected query (5s timeout)
+    // This prevents the query from hanging indefinitely
+    const result = await queryWithTimeout(query, [], 5000);
+    const hasContactsJoin = true; // We always try the join
+    const hasUsersJoin = true; // We always try the join
     
     // Helper function to convert dates to ISO strings
     const toISOString = (date: any): string => {
