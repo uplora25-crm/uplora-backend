@@ -8,7 +8,7 @@
  * making the code easier to test and maintain.
  */
 
-import pool from '../lib/db';
+import pool, { getPoolClient } from '../lib/db';
 import { PoolClient } from 'pg';
 import type { LeadDetail, Activity, ColdCall, OnsiteVisit, LeadTimeline } from '../types/leads';
 
@@ -121,7 +121,8 @@ async function createContact(
 export async function createLead(leadData: CreateLeadInput): Promise<LeadWithContact> {
   // Start a database transaction
   // Transactions ensure that if any step fails, all changes are rolled back
-  const client = await pool.connect();
+  // Use getPoolClient() with timeout protection to prevent hanging
+  const client = await getPoolClient(8000);
   
   try {
     // Begin the transaction
@@ -975,7 +976,8 @@ export async function addOnsiteVisit(params: {
  * @returns true if the lead was deleted, false if not found
  */
 export async function deleteLead(leadId: number): Promise<boolean> {
-  const client = await pool.connect();
+  // Use getPoolClient() with timeout protection to prevent hanging
+  const client = await getPoolClient(8000);
   
   try {
     await client.query('BEGIN');

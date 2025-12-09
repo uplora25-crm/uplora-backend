@@ -38,7 +38,7 @@ const pool = databaseUrl
       // Optimized for serverless: lazy connection, smaller pool
       max: 5, // Reduced for serverless (was 20)
       idleTimeoutMillis: 10000, // Close idle clients faster (was 30000)
-      connectionTimeoutMillis: 3000, // Faster timeout for serverless (was 5000)
+      connectionTimeoutMillis: 10000, // Increased for cold starts - first connection can be slow (was 3000)
       // Don't create connections immediately - connect on first query
       allowExitOnIdle: true, // Allow process to exit when pool is idle (serverless-friendly)
       // Prevent pool from attempting to connect on creation
@@ -55,7 +55,10 @@ const pool = databaseUrl
 // Only set up event handlers if we have a real database URL
 if (databaseUrl) {
   pool.on('connect', async (client: any) => {
+    // Set timezone and query timeout for this connection
     await client.query("SET timezone = 'UTC'");
+    // Set statement timeout to 25 seconds (must be less than function timeout of 30s)
+    await client.query("SET statement_timeout = 25000");
   });
 
   // Handle pool errors (log them but don't crash the app)
@@ -68,6 +71,23 @@ if (databaseUrl) {
 // NOTE: Removed synchronous connection test for serverless compatibility
 // The pool will connect lazily when first query is made
 // This prevents timeout during serverless function initialization
+
+/**
+ * Safely get a client from the pool with timeout protection
+ * This prevents pool.connect() from hanging indefinitely
+ * 
+ * @param timeoutMs - Maximum time to wait for a connection (default: 8000ms)
+ * @returns A pool client
+ * @throws Error if connection times out or fails
+ */
+export async function getPoolClient(timeoutMs: number = 8000): Promise<any> {
+  return Promise.race([
+    pool.connect(),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error(`Database connection timeout after ${timeoutMs}ms`)), timeoutMs)
+    )
+  ]) as Promise<any>;
+}
 
 // Export the pool so other modules can use it to run queries
 export default pool;
