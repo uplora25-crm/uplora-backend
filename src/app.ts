@@ -22,13 +22,29 @@ import dotenv from 'dotenv';
 // Load environment variables from .env file (done once at module load)
 dotenv.config();
 
+// Create Express application instance FIRST
+// This allows us to define the health endpoint before importing routes
+const app: Express = express();
+
+// ============================================================================
+// Health Check Endpoint (defined BEFORE routes to avoid import chain)
+// ============================================================================
+// Health check endpoint - useful for monitoring and testing
+// GET /api/health → returns { status: "ok" }
+// Defined early so it works even if routes have initialization issues
+app.get('/api/health', (req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.json({ status: 'ok' });
+});
+
 // Initialize singleton clients at module level (cold-start optimization)
 // These are created once per container and reused across requests
 import './lib/supabase'; // Initialize Supabase client singleton
 // Database pool - created lazily, no blocking connections
 // Services will import it when needed
 
-// Import route modules (lazy-loaded, but imported at module level for faster cold starts)
+// Import route modules (imported after health endpoint is defined)
+// Routes import controllers → services → db, so this happens after health endpoint
 import leadsRouter from './routes/leads';
 import dashboardRouter from './routes/dashboard';
 import dealsRouter from './routes/deals';
@@ -44,9 +60,6 @@ import notificationsRouter from './routes/notifications';
 import chatRouter from './routes/chat';
 import pricingRouter from './routes/pricing';
 import presentationsRouter from './routes/presentations';
-
-// Create Express application instance
-const app: Express = express();
 
 // ============================================================================
 // Performance Middleware
@@ -103,18 +116,8 @@ app.use(express.urlencoded({
 }));
 
 // ============================================================================
-// Health Check Endpoint
-// ============================================================================
-
-// Health check endpoint - useful for monitoring and testing
-// GET /api/health → returns { status: "ok" }
-// No cache - always return fresh status
-app.get('/api/health', (req: Request, res: Response) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.json({ status: 'ok' });
-});
-
 // API Routes
+// ============================================================================
 // Mount the leads router at /api/leads
 // This means all routes in leadsRouter will be prefixed with /api/leads
 app.use('/api/leads', leadsRouter);

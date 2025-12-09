@@ -1,5 +1,17 @@
 {
+  "functions": {
+    "api/health.ts": {
+      "runtime": "@vercel/node"
+    },
+    "api/index.ts": {
+      "runtime": "@vercel/node"
+    }
+  },
   "rewrites": [
+    {
+      "source": "/api/health",
+      "destination": "/api/health"
+    },
     {
       "source": "/(.*)",
       "destination": "/api"
