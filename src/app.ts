@@ -101,6 +101,40 @@ const corsOptions = process.env.FRONTEND_URL
 app.use(cors(corsOptions));
 
 // ============================================================================
+// Request Timeout Middleware (for serverless)
+// ============================================================================
+
+// Add request timeout protection for Vercel serverless
+// This prevents requests from hanging indefinitely
+app.use((req: Request, res: Response, next) => {
+  // Set request start time
+  (req as any).startTime = Date.now();
+  
+  // Set a timeout to prevent hanging requests (25s - less than function timeout)
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      console.error(`[App] Request timeout after 25s: ${req.method} ${req.url}`);
+      res.status(504).json({
+        success: false,
+        error: 'Gateway Timeout',
+        message: 'Request took too long to process',
+      });
+    }
+  }, 25000); // 25s timeout
+
+  // Clear timeout when response is sent
+  res.on('finish', () => {
+    clearTimeout(timeout);
+    const duration = Date.now() - ((req as any).startTime || 0);
+    if (duration > 5000) {
+      console.log(`[App] Slow request: ${duration}ms for ${req.method} ${req.url}`);
+    }
+  });
+
+  next();
+});
+
+// ============================================================================
 // Body Parsing Middleware
 // ============================================================================
 
