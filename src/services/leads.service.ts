@@ -288,6 +288,20 @@ export async function getAllLeads(): Promise<LeadWithContact[]> {
         }
       };
 
+      // Helper function to safely convert date values to Date objects
+      const safeDate = (date: Date | string | null | undefined): Date => {
+        if (!date) return new Date();
+        if (date instanceof Date) return date;
+        return new Date(date);
+      };
+
+      // Helper function to safely convert nullable date values
+      const safeDateOrNull = (date: Date | string | null | undefined): Date | null => {
+        if (date === null || date === undefined) return null;
+        if (date instanceof Date) return date;
+        return new Date(date);
+      };
+
       return {
         id: row.id,
         name: row.name,
@@ -299,19 +313,19 @@ export async function getAllLeads(): Promise<LeadWithContact[]> {
         status: row.status,
         verticals: row.verticals,
         notes: row.notes,
-        created_at: row.created_at instanceof Date ? row.created_at : new Date(row.created_at),
-        updated_at: row.updated_at instanceof Date ? row.updated_at : new Date(row.updated_at),
+        created_at: safeDate(row.created_at),
+        updated_at: safeDate(row.updated_at),
         created_by_email: row.created_by_email || null,
         creator_name: hasUsersJoin ? (row.creator_name || null) : null, // Will be null if users table doesn't exist or join fails
         contact: hasContactsJoin && row.contact_id
           ? {
-              id: row.contact_table_id || row.contact_id,
-              name: row.contact_name,
-              email: row.contact_email,
-              phone: row.contact_phone,
-              company: row.contact_company,
-              created_at: row.contact_created_at instanceof Date ? row.contact_created_at : new Date(row.contact_created_at),
-              updated_at: row.contact_updated_at ? (row.contact_updated_at instanceof Date ? row.contact_updated_at : new Date(row.contact_updated_at)) : null,
+              id: row.contact_table_id || row.contact_id || 0,
+              name: row.contact_name || '',
+              email: row.contact_email || null,
+              phone: row.contact_phone || null,
+              company: row.contact_company || null,
+              created_at: safeDate(row.contact_created_at),
+              updated_at: safeDateOrNull(row.contact_updated_at),
             } as Contact
           : null,
       } as LeadWithContact;
