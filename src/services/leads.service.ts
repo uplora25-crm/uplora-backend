@@ -180,6 +180,33 @@ export async function createLead(leadData: CreateLeadInput): Promise<LeadWithCon
 }
 
 /**
+ * Interface for the raw SQL query result row
+ */
+interface LeadQueryRow {
+  id: number;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  contact_id: number | null;
+  source: string | null;
+  stage: string | null;
+  status: string | null;
+  verticals: string | null;
+  notes: string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
+  created_by_email: string | null;
+  contact_table_id?: number | null;
+  contact_name?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  contact_company?: string | null;
+  contact_created_at?: Date | string | null;
+  contact_updated_at?: Date | string | null;
+  creator_name?: string | null;
+}
+
+/**
  * Retrieves all leads from the database with their associated contact information
  * 
  * @returns An array of all leads with their contacts
@@ -238,7 +265,7 @@ export async function getAllLeads(): Promise<LeadWithContact[]> {
     };
     
     // Transform the flat result into nested objects (lead with contact)
-    return result.rows.map((row): LeadWithContact => {
+    return result.rows.map((row: LeadQueryRow): LeadWithContact => {
       // Safe date conversion helper - converts Date objects to ISO strings (for required fields)
       const safeDateToString = (date: any): string => {
         if (!date) return new Date().toISOString();
